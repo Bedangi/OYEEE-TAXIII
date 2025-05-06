@@ -1,0 +1,693 @@
+-- Drop child tables first to avoid FK constraint issues
+DROP TABLE RidePoolingAssignments CASCADE CONSTRAINTS;
+DROP TABLE StopPoolingPoints CASCADE CONSTRAINTS;
+DROP TABLE RideLocations CASCADE CONSTRAINTS;
+DROP TABLE RideHistory CASCADE CONSTRAINTS;
+DROP TABLE LoyaltyTransactions CASCADE CONSTRAINTS;
+DROP TABLE LoyaltyPoints CASCADE CONSTRAINTS;
+DROP TABLE Payment CASCADE CONSTRAINTS;
+DROP TABLE Booking CASCADE CONSTRAINTS;
+DROP TABLE Cab CASCADE CONSTRAINTS;
+DROP TABLE DriverPhone CASCADE CONSTRAINTS;
+DROP TABLE Driver CASCADE CONSTRAINTS;
+DROP TABLE CustomerContact CASCADE CONSTRAINTS;
+DROP TABLE Customer CASCADE CONSTRAINTS;
+
+
+
+-- Create Customer table
+CREATE TABLE Customer (
+    customer_id INT PRIMARY KEY,
+    name VARCHAR2(100) NOT NULL
+);
+
+-- Customer contact information (separated to avoid partial dependencies)
+CREATE TABLE CustomerContact (
+    contact_id NUMBER PRIMARY KEY,
+    customer_id NUMBER NOT NULL,
+    contact_type VARCHAR2(10) CHECK (contact_type IN ('phone', 'email')) NOT NULL,
+    contact_value VARCHAR2(100) NOT NULL,
+    is_primary CHAR(1) DEFAULT 'N',
+    CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES Customer(customer_id) ON DELETE CASCADE,
+    CONSTRAINT unique_contact_value UNIQUE (contact_value),
+    CONSTRAINT unique_customer_contact UNIQUE (customer_id, contact_type, is_primary) -- Ensures only one primary of each type
+);
+
+-- Create Driver table
+CREATE TABLE Driver (
+    driver_id NUMBER PRIMARY KEY,
+    name VARCHAR2(100) NOT NULL,
+    license_number VARCHAR2(50) NOT NULL UNIQUE,
+    rating Decimal(3, 2) NOT NULL,
+    total_rides NUMBER DEFAULT 0
+);
+
+-- Create Driver Phone table
+CREATE TABLE DriverPhone (
+    phone_id NUMBER PRIMARY KEY,
+    driver_id NUMBER NOT NULL,
+    phone_number VARCHAR2(15) NOT NULL,
+    CONSTRAINT unique_driver_phone UNIQUE (driver_id, phone_number),
+    CONSTRAINT fk_driver_phone FOREIGN KEY (driver_id) REFERENCES Driver(driver_id) ON DELETE CASCADE
+);
+-- Create Cab table with driver_id as foreign key
+CREATE TABLE Cab (
+    cab_id NUMBER PRIMARY KEY,
+    cab_number VARCHAR2(20) NOT NULL UNIQUE,
+    cab_type VARCHAR2(50) NOT NULL,
+    is_available CHAR(1) DEFAULT 'Y',
+    driver_id NUMBER,
+    eco_friendly CHAR(1) CHECK (eco_friendly IN ('Y', 'N')),
+    CONSTRAINT fk_driver FOREIGN KEY (driver_id) REFERENCES Driver(driver_id) ON DELETE SET NULL
+);
+
+
+-- Create Booking table
+CREATE TABLE Booking (
+    booking_id NUMBER PRIMARY KEY,
+    customer_id NUMBER NOT NULL,
+    cab_id NUMBER NOT NULL,
+    booking_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    pickup_location VARCHAR2(255) NOT NULL,
+    drop_location VARCHAR2(255) NOT NULL,
+    fare DECIMAL(10, 2) NOT NULL,
+    discount_applied DECIMAL(10, 2) DEFAULT 0,
+    is_carpool CHAR(1) DEFAULT 'N' CHECK (is_carpool IN ('Y', 'N')),
+    CONSTRAINT fk_booking_customer FOREIGN KEY (customer_id) REFERENCES Customer(customer_id),
+    CONSTRAINT fk_booking_cab FOREIGN KEY (cab_id) REFERENCES Cab(cab_id)
+);
+
+-- Create Ride History table
+-- 1. Main Ride History Table
+CREATE TABLE RideHistory (
+    history_id NUMBER PRIMARY KEY,
+    booking_id NUMBER NOT NULL UNIQUE,
+    actual_pickup_time TIMESTAMP,
+    actual_drop_time TIMESTAMP,
+    actual_distance_km NUMBER(6, 2) NOT NULL,
+    actual_fare NUMBER(10, 2) NOT NULL,
+    CONSTRAINT fk_ridehistory_booking FOREIGN KEY (booking_id) REFERENCES Booking(booking_id)
+);
+
+-- 2. Ride Location Tracking (3NF)
+CREATE TABLE RideLocations (
+    location_id NUMBER PRIMARY KEY,
+    history_id NUMBER NOT NULL,
+    location_type VARCHAR2(10) CHECK (location_type IN ('pickup', 'drop', 'waypoint')) NOT NULL,
+    address VARCHAR2(255) NOT NULL,
+    recorded_time TIMESTAMP NOT NULL,
+    sequence_order NUMBER,
+    CONSTRAINT fk_ridelocation_history FOREIGN KEY (history_id) REFERENCES RideHistory(history_id) ON DELETE CASCADE,
+    CONSTRAINT unique_location_sequence UNIQUE (history_id, sequence_order)
+);
+
+-- Create Payment table
+CREATE TABLE Payment (
+    payment_id NUMBER PRIMARY KEY,
+    booking_id NUMBER NOT NULL,
+    payment_method VARCHAR2(50) NOT NULL,
+    payment_status VARCHAR2(50) NOT NULL,
+    payment_amount NUMBER(6,2) NOT NULL,
+    CONSTRAINT fk_payment_booking FOREIGN KEY (booking_id) REFERENCES Booking(booking_id) ON DELETE CASCADE
+);
+
+CREATE TABLE StopPoolingPoints (
+    point_id NUMBER PRIMARY KEY,
+    location_name VARCHAR2(100) NOT NULL,
+    latitude NUMBER(9, 6) NOT NULL,
+    longitude NUMBER(9, 6) NOT NULL,
+    is_active CHAR(1) CHECK (is_active IN ('Y', 'N'))
+);
+
+CREATE TABLE RidePoolingAssignments (
+    assignment_id NUMBER PRIMARY KEY,
+    booking_id NUMBER NOT NULL,
+    point_id NUMBER NOT NULL,
+    assigned_time TIMESTAMP DEFAULT SYSTIMESTAMP,
+    CONSTRAINT fk_rpa_booking FOREIGN KEY (booking_id) REFERENCES Booking(booking_id) ON DELETE CASCADE,
+    CONSTRAINT fk_rpa_point FOREIGN KEY (point_id) REFERENCES StopPoolingPoints(point_id)
+);
+
+
+CREATE TABLE LoyaltyPoints (
+    customer_id NUMBER PRIMARY KEY,
+    total_points NUMBER DEFAULT 0,
+    last_updated DATE DEFAULT SYSDATE,
+    CONSTRAINT fk_lp_customer FOREIGN KEY (customer_id) REFERENCES Customer(customer_id)
+);
+CREATE TABLE LoyaltyTransactions (
+    transaction_id NUMBER PRIMARY KEY,
+    customer_id NUMBER NOT NULL,
+    ride_id NUMBER,
+    points_earned NUMBER DEFAULT 0,
+    points_redeemed NUMBER DEFAULT 0,
+    transaction_date DATE DEFAULT SYSDATE,
+    CONSTRAINT fk_lt_customer FOREIGN KEY (customer_id) REFERENCES Customer(customer_id),
+    CONSTRAINT fk_lt_ride FOREIGN KEY (ride_id) REFERENCES RideHistory(history_id)
+);
+
+
+
+INSERT INTO Customer (customer_id, name) VALUES 
+(1, 'Amit Sharma');
+INSERT INTO Customer (customer_id, name) VALUES
+(2, 'Neha Verma');
+INSERT INTO Customer (customer_id, name) VALUES
+(3, 'Rahul Gupta');
+INSERT INTO Customer (customer_id, name) VALUES
+(4, 'Priya Singh');
+INSERT INTO Customer (customer_id, name) VALUES
+(5, 'Karan Mehta');
+INSERT INTO Customer (customer_id, name) VALUES
+(6, 'Sneha Kapoor');
+INSERT INTO Customer (customer_id, name) VALUES
+(7, 'Rohit Malhotra');
+INSERT INTO Customer (customer_id, name) VALUES
+(8, 'Anjali Desai');
+INSERT INTO Customer (customer_id, name) VALUES
+(9, 'Vikram Joshi');
+INSERT INTO Customer (customer_id, name) VALUES
+(10, 'Pooja Reddy');
+
+-- Each customer has one primary phone and one primary email
+-- For brevity, only a few entries are shown; replicate accordingly
+
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (1, 1, 'phone', '9876543210', 'Y');
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (2, 1, 'email', 'amit.sharma@example.com', 'Y');
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (3, 2, 'phone', '9876543211', 'Y');
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (4, 2, 'email', 'neha.verma@example.com', 'Y');
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (5, 3, 'phone', '9876543212', 'Y');
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (6, 3, 'email', 'raj.kumar@example.com', 'Y');
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (7, 4, 'phone', '9876543213', 'N');
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (8, 4, 'email', 'priya.singh@example.com', 'Y');
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (9, 5, 'phone', '9876543214', 'Y');
+  INSERT INTO CustomerContact (contact_id, customer_id, contact_type, contact_value, is_primary) 
+    VALUES (10, 5, 'email', 'manish.agarwal@example.com', 'N');
+
+-- Continue for other customers
+--insert driver
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (1, 'Rajesh Kumar', 'DL123456', 4.5, 120);
+
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (2, 'Sunita Devi', 'DL123457', 4.7, 150);
+
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (3, 'Anil Singh', 'DL123458', 4.3, 100);
+
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (4, 'Meena Kumari', 'DL123459', 4.6, 130);
+
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (5, 'Suresh Yadav', 'DL123460', 4.4, 110);
+
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (6, 'Kavita Joshi', 'DL123461', 4.8, 160);
+
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (7, 'Ramesh Babu', 'DL123462', 4.2, 90);
+
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (8, 'Lata Sharma', 'DL123463', 4.9, 170);
+
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (9, 'Vijay Patel', 'DL123464', 4.1, 80);
+
+INSERT INTO Driver (driver_id, name, license_number, rating, total_rides) 
+VALUES (10, 'Seema Rani', 'DL123465', 4.5, 115);
+--inseert into driver phone
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (1, 1, '9123456780');
+
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (2, 2, '9123456781');
+
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (3, 3, '9123456782');
+
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (4, 4, '9123456783');
+
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (5, 5, '9123456784');
+
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (6, 6, '9123456785');
+
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (7, 7, '9123456786');
+
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (8, 8, '9123456787');
+
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (9, 9, '9123456788');
+
+INSERT INTO DriverPhone (phone_id, driver_id, phone_number) 
+VALUES (10, 10, '9123456789');
+--insert into cab
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (1, 'CH01AB1234', 'Sedan', 'Y', 1, 'Y');
+
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (2, 'CH01AB1235', 'Hatchback', 'Y', 2, 'N');
+
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (3, 'CH01AB1236', 'SUV', 'Y', 3, 'Y');
+
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (4, 'CH01AB1237', 'Sedan', 'Y', 4, 'N');
+
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (5, 'CH01AB1238', 'Hatchback', 'Y', 5, 'Y');
+
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (6, 'CH01AB1239', 'SUV', 'Y', 6, 'N');
+
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (7, 'CH01AB1240', 'Sedan', 'Y', 7, 'Y');
+
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (8, 'CH01AB1241', 'Hatchback', 'Y', 8, 'N');
+
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (9, 'CH01AB1242', 'SUV', 'Y', 9, 'Y');
+
+INSERT INTO Cab (cab_id, cab_number, cab_type, is_available, driver_id, eco_friendly) 
+VALUES (10, 'CH01AB1243', 'Sedan', 'Y', 10, 'N');
+
+
+-- 5 bookings with is_carpool = 'Y'
+INSERT INTO Booking VALUES (1, 1, 1, SYSDATE - 10, 'Sector 17', 'Sector 22', 200.00, 0, 'Y');
+INSERT INTO Booking VALUES (2, 1, 3, SYSDATE - 7,  'Sector 15', 'Sector 35', 250.00, 0, 'Y');
+INSERT INTO Booking VALUES (3, 1, 2, SYSDATE - 5,  'Sector 10', 'Sector 20', 180.00, 0, 'Y');
+INSERT INTO Booking VALUES (4, 2, 4, SYSDATE - 3,  'Sector 12', 'Sector 25', 220.00, 0, 'Y');
+INSERT INTO Booking VALUES (5, 3, 5, SYSDATE - 2,  'Sector 14', 'Sector 28', 210.00, 0, 'Y');
+
+-- 5 bookings with is_carpool = 'N'
+INSERT INTO Booking VALUES (6, 4, 6, SYSDATE - 1,  'Sector 16', 'Sector 30', 230.00, 0, 'N');
+INSERT INTO Booking VALUES (7, 4, 7, SYSDATE - 8,  'Sector 18', 'Sector 32', 240.00, 0, 'N');
+INSERT INTO Booking VALUES (8, 4, 8, SYSDATE - 6,  'Sector 19', 'Sector 33', 260.00, 0, 'N');
+INSERT INTO Booking VALUES (9, 4, 9, SYSDATE - 4,  'Sector 21', 'Sector 34', 270.00, 0, 'N');
+INSERT INTO Booking VALUES (10, 4, 10, SYSDATE - 9, 'Sector 23', 'Sector 36', 280.00, 0, 'N');
+
+
+-- RideHistory for Customer 1
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (1, 1, TO_TIMESTAMP('2025-05-01 08:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 08:15:00', 'YYYY-MM-DD HH24:MI:SS'), 10, 200.00);
+
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (2, 2, TO_TIMESTAMP('2025-05-01 09:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 09:18:00', 'YYYY-MM-DD HH24:MI:SS'), 12, 250.00);
+
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (3, 3, TO_TIMESTAMP('2025-05-01 10:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 10:12:00', 'YYYY-MM-DD HH24:MI:SS'), 8, 180.00);
+
+-- RideHistory for Customer 2
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (4, 4, TO_TIMESTAMP('2025-05-01 11:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 11:20:00', 'YYYY-MM-DD HH24:MI:SS'), 14, 220.00);
+
+-- RideHistory for Customer 3
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (5, 5, TO_TIMESTAMP('2025-05-01 12:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 12:24:00', 'YYYY-MM-DD HH24:MI:SS'), 16, 210.00);
+
+-- RideHistory for Customer 4
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (6, 6, TO_TIMESTAMP('2025-05-01 13:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 13:27:00', 'YYYY-MM-DD HH24:MI:SS'), 18, 230.00);
+
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (7, 7, TO_TIMESTAMP('2025-05-01 14:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 14:30:00', 'YYYY-MM-DD HH24:MI:SS'), 20, 240.00);
+
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (8, 8, TO_TIMESTAMP('2025-05-01 15:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 15:33:00', 'YYYY-MM-DD HH24:MI:SS'), 22, 260.00);
+
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (9, 9, TO_TIMESTAMP('2025-05-01 16:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 16:36:00', 'YYYY-MM-DD HH24:MI:SS'), 24, 270.00);
+
+INSERT INTO RideHistory (history_id, booking_id, actual_pickup_time, actual_drop_time, actual_distance_km, actual_fare) 
+VALUES (10, 10, TO_TIMESTAMP('2025-05-01 17:00:00', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('2025-05-01 17:39:00', 'YYYY-MM-DD HH24:MI:SS'), 26, 280.00);
+
+--insert ride locations
+-- 📌 Customer 1
+
+INSERT INTO RideLocations VALUES (1, 1, 'pickup', 'Sector 17', SYSTIMESTAMP - INTERVAL '15' MINUTE, 1);
+INSERT INTO RideLocations VALUES (2, 1, 'drop', 'Sector 22', SYSTIMESTAMP, 2);
+
+
+INSERT INTO RideLocations VALUES (3, 2, 'pickup', 'Sector 15', SYSTIMESTAMP - INTERVAL '18' MINUTE, 1);
+INSERT INTO RideLocations VALUES (4, 2, 'drop', 'Sector 35', SYSTIMESTAMP, 2);
+
+
+INSERT INTO RideLocations VALUES (5, 3, 'pickup', 'Sector 10', SYSTIMESTAMP - INTERVAL '12' MINUTE, 1);
+INSERT INTO RideLocations VALUES (6, 3, 'drop', 'Sector 20', SYSTIMESTAMP, 2);
+
+
+-- 📌 Customer 2
+INSERT INTO RideLocations VALUES (7, 4, 'pickup', 'Sector 12', SYSTIMESTAMP - INTERVAL '20' MINUTE, 1);
+INSERT INTO RideLocations VALUES (8, 4, 'drop', 'Sector 25', SYSTIMESTAMP, 2);
+
+-- 📌 Customer 3
+INSERT INTO RideLocations VALUES (9, 5, 'pickup', 'Sector 14', SYSTIMESTAMP - INTERVAL '24' MINUTE, 1);
+INSERT INTO RideLocations VALUES (10, 5, 'drop', 'Sector 28', SYSTIMESTAMP, 2);
+
+-- 📌 Customer 4
+
+-- Booking 6
+INSERT INTO RideLocations VALUES (11, 6, 'pickup', 'Sector 16', SYSTIMESTAMP - INTERVAL '27' MINUTE, 1);
+INSERT INTO RideLocations VALUES (12, 6, 'drop', 'Sector 30', SYSTIMESTAMP, 2);
+
+-- Booking 7
+INSERT INTO RideLocations VALUES (13, 7, 'pickup', 'Sector 18', SYSTIMESTAMP - INTERVAL '30' MINUTE, 1);
+INSERT INTO RideLocations VALUES (14, 7, 'drop', 'Sector 32', SYSTIMESTAMP, 2);
+
+-- Booking 8
+INSERT INTO RideLocations VALUES (15, 8, 'pickup', 'Sector 19', SYSTIMESTAMP - INTERVAL '33' MINUTE, 1);
+INSERT INTO RideLocations VALUES (16, 8, 'drop', 'Sector 33', SYSTIMESTAMP, 2);
+
+-- Booking 9
+INSERT INTO RideLocations VALUES (17, 9, 'pickup', 'Sector 21', SYSTIMESTAMP - INTERVAL '36' MINUTE, 1);
+INSERT INTO RideLocations VALUES (18, 9, 'drop', 'Sector 34', SYSTIMESTAMP, 2);
+
+-- Booking 10
+INSERT INTO RideLocations VALUES (19, 10, 'pickup', 'Sector 23', SYSTIMESTAMP - INTERVAL '39' MINUTE, 1);
+INSERT INTO RideLocations VALUES (20, 10, 'drop', 'Sector 36', SYSTIMESTAMP, 2);
+
+--insert into payment
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES
+(1, 1, 200.00, 'Credit Card', 'Completed');
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES
+(2, 2, 250.00, 'UPI', 'Completed');
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES
+(3, 3, 180.00, 'Cash', 'Completed');
+
+-- Payments for Customer 2
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES
+(4, 4, 220.00, 'Credit Card', 'Completed');
+
+-- Payments for Customer 3
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES
+(5, 5, 210.00, 'UPI', 'Completed');
+
+-- Payments for Customer 4
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES
+(6, 6, 230.00, 'Cash', 'Completed');
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES 
+(7, 7, 240.00, 'Credit Card', 'Completed');
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES
+(8, 8, 260.00, 'UPI', 'Completed');
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES
+(9, 9, 270.00, 'Cash', 'Completed');
+INSERT INTO Payment (payment_id, booking_id, payment_amount, payment_method, payment_status) VALUES
+(10, 10, 280.00, 'Credit Card', 'Completed');
+
+-- StopPoolingPoints for carpooling locations
+INSERT INTO StopPoolingPoints (point_id, location_name, latitude, longitude) 
+VALUES (1, 'Sector 17', 30.7333, 76.7794);
+
+INSERT INTO StopPoolingPoints (point_id, location_name, latitude, longitude) 
+VALUES (2, 'Sector 22', 30.7334, 76.7795);
+
+INSERT INTO StopPoolingPoints (point_id, location_name, latitude, longitude) 
+VALUES (3, 'Sector 15', 30.7335, 76.7796);
+
+INSERT INTO StopPoolingPoints (point_id, location_name, latitude, longitude) 
+VALUES (4, 'Sector 35', 30.7336, 76.7797);
+
+INSERT INTO StopPoolingPoints (point_id, location_name, latitude, longitude) 
+VALUES (5, 'Sector 10', 30.7337, 76.7798);
+
+INSERT INTO StopPoolingPoints (point_id, location_name, latitude, longitude) 
+VALUES (6, 'Sector 20', 30.7338, 76.7799);
+
+
+-- RidePoolingAssignments for carpooling customers
+INSERT INTO RidePoolingAssignments (assignment_id, booking_id, point_id) 
+VALUES (1, 1, 1);
+
+INSERT INTO RidePoolingAssignments (assignment_id, booking_id, point_id) 
+VALUES (2, 2, 2);
+
+INSERT INTO RidePoolingAssignments (assignment_id, booking_id, point_id) 
+VALUES (3, 3, 3);
+
+INSERT INTO RidePoolingAssignments (assignment_id, booking_id, point_id) 
+VALUES (4, 4, 4);
+
+INSERT INTO RidePoolingAssignments (assignment_id, booking_id, point_id) 
+VALUES (5, 5, 5);
+
+
+-- LoyaltyPoints
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (1, 0, SYSDATE);
+
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (2, 0, SYSDATE);
+
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (3, 0, SYSDATE);
+
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (4, 0, SYSDATE);
+
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (5, 0, SYSDATE);
+
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (6, 0, SYSDATE);
+
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (7, 0, SYSDATE);
+
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (8, 0, SYSDATE);
+
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (9, 0, SYSDATE);
+
+INSERT INTO LoyaltyPoints (customer_id, total_points, last_updated) 
+VALUES (10, 0, SYSDATE);
+
+
+-- LoyaltyTransactions for loyalty points
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (1, 1, NULL, 0, 0, SYSDATE - 10);
+
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (2, 2, NULL, 0, 0, SYSDATE - 7);
+
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (3, 3, NULL, 0, 0, SYSDATE - 5);
+
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (4, 4, NULL, 0, 0, SYSDATE - 3);
+
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (5, 5, NULL, 0, 0, SYSDATE - 2);
+
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (6, 6, NULL, 0, 0, SYSDATE - 1);
+
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (7, 7, NULL, 0, 0, SYSDATE - 8);
+
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (8, 8, NULL, 0, 0, SYSDATE - 6);
+
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (9, 9, NULL, 0, 0, SYSDATE - 4);
+
+INSERT INTO LoyaltyTransactions (transaction_id, customer_id, ride_id, points_earned, points_redeemed, transaction_date)
+VALUES (10, 10, NULL,0, 0, SYSDATE - 9);
+
+
+
+SELECT * FROM LoyaltyPoints;
+SELECT * FROM LoyaltyTransactions;
+DECLARE
+    CURSOR cur_customers IS
+        SELECT customer_id FROM Customer;
+
+    v_total_bookings NUMBER;
+    v_total_amount   NUMBER;
+    v_loyalty_points NUMBER;
+BEGIN
+    FOR c IN cur_customers LOOP
+        -- Calculate total bookings and payment amount in last 60 days
+        SELECT COUNT(*), NVL(SUM(p.payment_amount), 0)
+        INTO v_total_bookings, v_total_amount
+        FROM Payment p
+        JOIN Booking b ON p.booking_id = b.booking_id
+        WHERE b.customer_id = c.customer_id
+          AND b.booking_date >= SYSDATE - 60;
+
+        -- Loyalty points logic
+        v_loyalty_points := 0;
+
+        IF v_total_bookings >= 10 THEN
+            v_loyalty_points := v_loyalty_points + 200;
+        ELSIF v_total_bookings >= 5 THEN
+            v_loyalty_points := v_loyalty_points + 100;
+        END IF;
+
+        IF v_total_amount >= 200 THEN
+            v_loyalty_points := v_loyalty_points + 50;
+        ELSIF v_total_amount >= 100 THEN
+            v_loyalty_points := v_loyalty_points + 20;
+        END IF;
+
+        -- Merge into LoyaltyPoints table
+        MERGE INTO LoyaltyPoints lp
+        USING (SELECT c.customer_id AS cid FROM dual) src
+        ON (lp.customer_id = src.cid)
+        WHEN MATCHED THEN
+            UPDATE SET lp.total_points = lp.total_points + v_loyalty_points,
+                       lp.last_updated = SYSDATE
+        WHEN NOT MATCHED THEN
+            INSERT (customer_id, total_points, last_updated)
+            VALUES (src.cid, v_loyalty_points, SYSDATE);
+
+		MERGE INTO LoyaltyTransactions tp
+        USING (SELECT c.customer_id AS cid FROM dual) src
+        ON (tp.customer_id = src.cid)
+        WHEN MATCHED THEN
+            UPDATE SET tp.points_earned = tp.points_earned + v_loyalty_points,
+                       tp.transaction_date = SYSDATE
+        WHEN NOT MATCHED THEN
+            INSERT (customer_id, points_earned, transaction_date)
+            VALUES (src.cid, v_loyalty_points, SYSDATE);
+    END LOOP;
+
+    COMMIT;
+END;
+/
+SELECT * FROM LoyaltyPoints;
+SELECT * FROM LoyaltyTransactions;
+
+
+
+DECLARE
+    CURSOR booking_cursor IS
+        SELECT b.booking_id, b.customer_id, b.cab_id, b.fare, b.is_carpool, b.booking_date,
+               c.name AS customer_name, d.name AS driver_name, cb.cab_number, cb.cab_type
+        FROM Booking b
+        JOIN Customer c ON b.customer_id = c.customer_id
+        JOIN Cab cb ON b.cab_id = cb.cab_id
+        JOIN Driver d ON cb.driver_id = d.driver_id
+        ORDER BY b.customer_id, b.booking_date;
+    
+    v_booking_sequence NUMBER := 0;
+    v_prev_customer_id NUMBER := 0;
+    v_current_quarter_start DATE;
+    v_booking_distance_discount NUMBER := 0;
+    v_loyalty_discount NUMBER := 0;
+    v_final_discount NUMBER := 0;
+    v_final_fare NUMBER;
+    v_carpool_discount NUMBER := 0;
+    v_discount_reason VARCHAR2(200);
+    v_loyalty_points NUMBER;
+    v_loyalty_points_used NUMBER := 0;
+BEGIN
+    FOR booking_rec IN booking_cursor LOOP
+        IF v_prev_customer_id != booking_rec.customer_id OR 
+           TRUNC(booking_rec.booking_date, 'Q') != v_current_quarter_start THEN
+            v_booking_sequence := 0;
+            v_current_quarter_start := TRUNC(booking_rec.booking_date, 'Q');
+            v_prev_customer_id := booking_rec.customer_id;
+        END IF;
+
+        v_booking_sequence := v_booking_sequence + 1;
+        v_booking_distance_discount := 0;
+        v_loyalty_discount := 0;
+        v_final_discount := 0;
+        v_discount_reason := '';
+        v_carpool_discount := 0;
+        v_loyalty_points_used := 0;
+
+        -- Booking sequence discount
+        IF v_booking_sequence = 3 THEN
+            v_booking_distance_discount := 10;
+            v_discount_reason := '3rd booking in quarter';
+        ELSIF v_booking_sequence = 4 THEN
+            v_booking_distance_discount := 15;
+            v_discount_reason := '4th booking in quarter';
+        ELSIF v_booking_sequence >= 5 THEN
+            v_booking_distance_discount := 15 + (5 * (v_booking_sequence - 4));
+            IF v_booking_distance_discount > 50 THEN
+                v_booking_distance_discount := 50;
+            END IF;
+            v_discount_reason := v_booking_sequence || 'th booking in quarter';
+        END IF;
+
+        -- Loyalty discount
+        SELECT total_points INTO v_loyalty_points
+        FROM LoyaltyPoints
+        WHERE customer_id = booking_rec.customer_id;
+
+        IF v_loyalty_points >= 1000 THEN
+            v_loyalty_discount := 20;
+            v_loyalty_points_used := 1000;
+        ELSIF v_loyalty_points >= 500 THEN
+            v_loyalty_discount := 15;
+            v_loyalty_points_used := 500;
+        ELSIF v_loyalty_points >= 200 THEN
+            v_loyalty_discount := 10;
+            v_loyalty_points_used := 200;
+        ELSIF v_loyalty_points >= 100 THEN
+            v_loyalty_discount := 5;
+            v_loyalty_points_used := 100;
+        END IF;
+
+        -- Final discount decision
+        IF v_booking_distance_discount > v_loyalty_discount THEN
+            v_final_discount := v_booking_distance_discount;
+            v_discount_reason := 'Booking-based discount';
+            v_loyalty_points_used := 0;
+        ELSE
+            v_final_discount := v_loyalty_discount;
+            v_discount_reason := 'Loyalty discount';
+        END IF;
+
+        -- Carpool discount
+        IF booking_rec.is_carpool = 'Y' THEN
+            v_carpool_discount := 10;
+            v_discount_reason := v_discount_reason || ' + carpool';
+        END IF;
+
+        -- Final fare calculation
+        v_final_fare := booking_rec.fare * (1 - v_final_discount/100) * (1 - v_carpool_discount/100);
+
+        -- Update Booking table with final fare and total discount
+        UPDATE Booking
+        SET fare = v_final_fare,
+            discount_applied = v_final_discount + v_carpool_discount
+        WHERE booking_id = booking_rec.booking_id;
+
+        -- Deduct used loyalty points
+        IF v_loyalty_points_used > 0 THEN
+            UPDATE LoyaltyPoints
+            SET total_points = total_points - v_loyalty_points_used
+            WHERE customer_id = booking_rec.customer_id;
+
+			UPDATE LoyaltyTransactions
+            SET points_redeemed = v_loyalty_points_used
+            WHERE customer_id = booking_rec.customer_id;
+        END IF;
+    END LOOP;
+
+    COMMIT;
+    DBMS_OUTPUT.PUT_LINE('✅ Discounts applied and database updated successfully.');
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('❌ Error occurred: ' || SQLERRM);
+        ROLLBACK;
+END;
+/
